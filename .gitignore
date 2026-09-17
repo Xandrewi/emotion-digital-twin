@@ -1,0 +1,15 @@
+# Виртуальное окружение (никогда не грузим!)
+venv/
+.env
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Файлы модели (если скачались локально)
+models/
+
+# OS files
+.DS_Store
+Thumbs.db

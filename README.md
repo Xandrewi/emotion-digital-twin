@@ -3,14 +3,14 @@
 **RU:** AI-компаньон для анализа ментального здоровья с объяснимым искусственным интеллектом (XAI). Система не просто определяет эмоцию, но выявляет триггеры стресса и дает персонализированные рекомендации на основе базы знаний из 30+ категорий.  
 **EN:** An AI mental health companion with Explainable AI (XAI). The system not only detects emotions but also identifies stress triggers and provides personalized recommendations based on a knowledge base of 30+ categories.
 
----
+
 
 ## ✨ Особенности / Features
 
 - **RU:** Анализ тональности русского текста (RuBert) | Извлечение ключевых слов-триггеров (KeyBERT/YAKE) | Data-driven генерация советов (MSSQL Knowledge Base) | Приоритизация критических состояний (суицид, паника, дереализация) | REST API + Swagger UI  
 - **EN:** Russian text sentiment analysis (RuBert) | Keyword trigger extraction (KeyBERT/YAKE) | Data-driven advice generation (MSSQL Knowledge Base) | Critical state prioritization (suicide, panic, derealization) | REST API + Swagger UI
 
----
+
 
 ## 🛠 Стек технологий / Tech Stack
 
@@ -22,7 +22,7 @@
 | Analytics                   | Custom SQL aggregation                      |
 | Config                      | python-dotenv                               |
 
----
+
 
 ## 🚀 Как запустить / How to Run
 
@@ -40,6 +40,16 @@
 4. Start the server: `python main.py`  
 5. Open API documentation: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)  
 
----
+
 
 ## 📂 Структура проекта / Project Structure
+emotion-backend/
+├── main.py # Основное приложение / Main application
+├── schema.sql # Скрипт создания БД и базы знаний / DB & KB creation script
+├── .env.example # Шаблон переменных окружения / Environment variables template
+├── requirements.txt # Зависимости / Dependencies
+└── .gitignore # Игнорируемые файлы / Ignored files
+
+👨‍💻 Автор / Author
+Firsova Maria
+📧 Email: firsova-maria16@yandex.ru

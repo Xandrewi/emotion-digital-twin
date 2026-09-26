@@ -11,12 +11,11 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 import os
 
-# --- NLP БИБЛИОТЕКИ ДЛЯ ТРИГГЕРОВ И СОВЕТОВ ---
+# --- ТОЛЬКО ЛЕГКИЕ БИБЛИОТЕКИ (БЕЗ KEYBERT) ---
 try:
-    from keybert import KeyBERT
-    import yake
+    import yake  # YAKE работает на статистике, не требует нейросетей
 except ImportError:
-    raise ImportError("Установите библиотеки: pip install keybert yake")
+    raise ImportError("Установите библиотеку: pip install yake")
 
 # Загружаем переменные из .env
 load_dotenv()
@@ -26,24 +25,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# 1. НАСТРОЙКА БАЗЫ ДАННЫХ (УНИВЕРСАЛЬНАЯ: MSSQL / PostgreSQL)
+# 1. НАСТРОЙКА БАЗЫ ДАННЫХ
 # ==========================================
-
-# Проверяем, есть ли переменная окружения от облачного провайдера (Render/Railway)
 CLOUD_DB_URL = os.getenv("DATABASE_URL")
-
 if CLOUD_DB_URL:
-    # РЕЖИМ ПРОДАКШНА (PostgreSQL)
-    # Render отдает 'postgres://', SQLAlchemy требует 'postgresql://'
     if CLOUD_DB_URL.startswith("postgres://"):
         DATABASE_URL = CLOUD_DB_URL.replace("postgres://", "postgresql://", 1)
     else:
         DATABASE_URL = CLOUD_DB_URL
-
     logger.info("Using Cloud PostgreSQL connection")
-
 else:
-    # РЕЖИМ ЛОКАЛЬНОЙ РАЗРАБОТКИ (MSSQL)
     DRIVER = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
     SERVER = os.getenv("DB_SERVER", "localhost")
     DATABASE = os.getenv("DB_NAME", "EmotionDB")
@@ -55,8 +46,7 @@ else:
         DATABASE_URL = f"mssql+pyodbc://{USER}:{PASSWORD}@{SERVER},{PORT}/{DATABASE}?driver={DRIVER.replace(' ', '+')}"
     else:
         DATABASE_URL = f"mssql+pyodbc://{USER}:{PASSWORD}@{SERVER}/{DATABASE}?driver={DRIVER.replace(' ', '+')}"
-
-    logger.info(f"Using local MSSQL connection: {SERVER}")
+    logger.info(f"Using local DB connection: {SERVER}")
 
 try:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -68,25 +58,21 @@ except Exception as e:
 Base = declarative_base()
 
 
-# Модель таблицы истории анализов
 class AnalysisHistory(Base):
     __tablename__ = "analysis_history"
-
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(100), nullable=False, index=True)
     text = Column(Text, nullable=False)
     sentiment = Column(String(20), nullable=False)
     score = Column(Float, nullable=False)
     emoji = Column(String(10))
-    triggers = Column(Text, nullable=True)  # JSON массив триггеров
-    advice = Column(Text, nullable=True)  # Персонализированный совет
+    triggers = Column(Text, nullable=True)
+    advice = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 
-# Модель таблицы базы знаний
 class AdviceKnowledgeBase(Base):
     __tablename__ = "advice_knowledge_base"
-
     id = Column(Integer, primary_key=True, autoincrement=True)
     category_name = Column(String(50), nullable=False, unique=True)
     category_title = Column(String(100), nullable=False)
@@ -99,7 +85,6 @@ class AdviceKnowledgeBase(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# Создаем/проверяем таблицы (работает и для MSSQL, и для Postgres)
 if engine:
     try:
         Base.metadata.create_all(engine)
@@ -111,24 +96,17 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if e
 
 
 # ==========================================
-# 2. NLP ДВИЖОК: ТРИГГЕРЫ + СОВЕТЫ ИЗ БД
+# 2. ОПТИМИЗИРОВАННЫЙ NLP ДВИЖОК (YAKE ONLY)
 # ==========================================
-
 class EmotionalAdvisor:
-    """Загружает базу знаний из БД при старте приложения"""
-
     def __init__(self):
-        self.kw_model = KeyBERT(model='cointegrated/rubert-tiny2')
-        self.yake_extractor = yake.KeywordExtractor(lan="ru", n=3, dedupLim=0.9)
-        self.knowledge_base = []  # Список словарей из БД
+        # Инициализируем ТОЛЬКО YAKE (весит <1MB)
+        self.yake_extractor = yake.KeywordExtractor(lan="ru", n=2, dedupLim=0.8, top=5)
+        self.knowledge_base = []
         self._load_knowledge_base()
 
     def _load_knowledge_base(self):
-        """Загружает активные категории советов из БД"""
-        if not SessionLocal:
-            logger.warning("DB not available, using empty knowledge base")
-            return
-
+        if not SessionLocal: return
         db = SessionLocal()
         try:
             rows = db.query(AdviceKnowledgeBase).filter(
@@ -147,119 +125,76 @@ class EmotionalAdvisor:
                 }
                 for row in rows
             ]
-            logger.info(f"Loaded {len(self.knowledge_base)} advice categories from DB")
+            logger.info(f"Loaded {len(self.knowledge_base)} advice categories")
         except Exception as e:
             logger.error(f"Failed to load knowledge base: {e}")
         finally:
             db.close()
 
     def extract_triggers(self, text: str) -> list[str]:
-        """Извлекает ключевые слова-триггеры из текста с надежным фолбэком"""
-        if len(text.strip()) < 5:
-            return []
+        """Извлекает триггеры через YAKE + очистку"""
+        if len(text.strip()) < 5: return []
 
-        # Расширенный список стоп-слов
         stop_words = {"и", "в", "не", "на", "я", "что", "это", "как", "то", "но",
                       "он", "она", "мы", "вы", "они", "с", "у", "о", "из", "по", "для",
-                      "завтра", "сдавать", "ничего", "каждой", "боюсь", "а", "же", "ли", "бы"}
+                      "завтра", "сдавать", "ничего", "каждой", "боюсь", "а", "же", "ли", "бы",
+                      "очень", "просто", "так", "уже", "еще", "быть", "мочь"}
 
-        raw_triggers = []
-
-        # Попытка 1: KeyBERT
         try:
-            keywords = self.kw_model.extract_keywords(
-                text, keyphrase_ngram_range=(1, 2), stop_words='russian', top_n=3
-            )
-            raw_triggers = [kw[0] for kw in keywords if kw[0].lower() not in stop_words]
+            keywords = self.yake_extractor.extract_keywords(text)
+            raw_triggers = [kw[0] for kw in keywords[:5]]
         except Exception as e:
-            logger.warning(f"KeyBERT failed: {e}")
-
-        # Попытка 2: YAKE (если KeyBERT не дал результатов)
-        if not raw_triggers:
-            try:
-                keywords = self.yake_extractor.extract_keywords(text)
-                raw_triggers = [kw[0] for kw in keywords[:3] if kw[0].lower() not in stop_words]
-            except Exception as e:
-                logger.warning(f"YAKE failed: {e}")
-
-        # Попытка 3: Простое разбиение (гарантированный фолбэк)
-        if not raw_triggers:
+            logger.warning(f"YAKE failed: {e}")
             words = [w.strip(".,!?;:") for w in text.split() if len(w) > 3 and w.lower() not in stop_words]
             raw_triggers = words[:3]
 
-        # ОЧИСТКА ТРИГГЕРОВ
-        cleaned_triggers = []
+        # Очистка от мусора
+        cleaned = []
         for t in raw_triggers:
             words = t.split()
-            meaningful = [w for w in words if len(w) > 3 and w.lower() not in stop_words]
+            meaningful = [w for w in words if len(w) > 2 and w.lower() not in stop_words]
             if meaningful:
-                cleaned_triggers.append(" ".join(meaningful))
-            elif len(t) > 3:
-                cleaned_triggers.append(t)
-
-        return cleaned_triggers[:3]
+                cleaned.append(" ".join(meaningful))
+        return list(dict.fromkeys(cleaned))[:3]  # Убираем дубликаты
 
     def generate_advice(self, sentiment: str, triggers: list[str]) -> str:
-        """Находит лучшую категорию по триггерам и возвращает совет из БД"""
         if not triggers:
-            return "Я слышу ваши эмоции. Попробуйте сделать паузу и глубоко подышать."
+            return "Я слышу ваши эмоции. Попробуйте сделать паузу и глубоко поддышать."
 
         trigger_set = [t.lower().strip() for t in triggers]
 
-        # Функция нечеткого поиска по корням слов
-        def find_match_score(category_data):
+        def find_match_score(cat):
             score = 0
-            for trigger in trigger_set:
-                for keyword in category_data["keywords"]:
-                    if keyword in trigger or trigger in keyword:
+            for tr in trigger_set:
+                for kw in cat["keywords"]:
+                    if kw in tr or tr in kw:
                         score += 1
             return score
 
-        # Обработка позитивных эмоций
         if sentiment == 'positive':
             best = max(self.knowledge_base, key=find_match_score, default=None)
             if best and find_match_score(best) > 0:
-                return f"{best['emoji']} Здорово, что вы находите радость! Зафиксируйте это состояние: запишите 3 детали момента. В трудные минуты эта запись станет ресурсом."
-            return "😊 Прекрасные эмоции! Наслаждайтесь моментом и поделитесь радостью с близкими."
+                return f"{best['emoji']} Здорово! Зафиксируйте это состояние: запишите 3 детали момента."
+            return "😊 Прекрасные эмоции! Наслаждайтесь моментом."
 
-        # Поиск лучшей категории для негативных эмоций
-        best_index = -1
-        max_weighted_score = -1
+        CRITICAL = {"suicidal_thoughts", "self_harm", "panic_attack", "derealization", "exam_stress"}
 
-        # Категории с абсолютным приоритетом (побеждают всегда при наличии совпадения)
-        CRITICAL_CATEGORIES = {
-            "suicidal_thoughts", "self_harm", "panic_attack",
-            "derealization", "exam_stress", "school_problems"
-        }
-
+        best_idx, max_score = -1, -1
         for i, cat in enumerate(self.knowledge_base):
-            raw_score = find_match_score(cat)
-            if raw_score > 0:
-                weighted_score = raw_score * cat["priority"]
+            s = find_match_score(cat)
+            if s > 0:
+                w = s * cat["priority"] + (100 if cat["category"] in CRITICAL else 0)
+                if w > max_score:
+                    max_score, best_idx = w, i
 
-                # Абсолютный бонус для критических состояний
-                if cat["category"] in CRITICAL_CATEGORIES:
-                    weighted_score += 100
+        if best_idx != -1:
+            d = self.knowledge_base[best_idx]
+            return f"{d['emoji']} {d['advice_full']}"
 
-                if weighted_score > max_weighted_score:
-                    max_weighted_score = weighted_score
-                    best_index = i
-
-        if best_index != -1 and max_weighted_score > 0:
-            best_data = self.knowledge_base[best_index]
-            return f"{best_data['emoji']} {best_data['advice_full']}"
-
-        # Умный Fallback, если ничего не подошло
-        triggers_str = ", ".join([f"'{t}'" for t in trigger_set[:3]])
-        return (
-            f"Я вижу, что вас беспокоят: {triggers_str}. \n\n"
-            f"Предлагаю универсальную технику стабилизации:\n"
-            f"🌬️ Дыхание 4-7-8: вдох (4с) → задержка (7с) → выдох (8с). "
-            f"Повторите 4 цикла для переключения нервной системы."
-        )
+        tr_str = ", ".join([f"'{t}'" for t in trigger_set[:3]])
+        return f"Вижу, что беспокоят: {tr_str}. ️ Дыхание 4-7-8: вдох(4с)→задержка(7с)→выдох(8с). Повторите 4 цикла."
 
 
-# Глобальный экземпляр советника
 advisor = EmotionalAdvisor()
 
 

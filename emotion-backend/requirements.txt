@@ -7,6 +7,5 @@ numpy==2.2.0
 python-dotenv==1.0.1
 python-multipart==0.0.20
 sqlalchemy==2.0.37
-keybert
 yake
 psycopg2-binary

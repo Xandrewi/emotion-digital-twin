@@ -232,15 +232,14 @@ app.add_middleware(
 # Загрузка модели тональности (ОПТИМИЗИРОВАНО ДЛЯ RENDER)
 logger.info("Loading sentiment analysis model...")
 try:
-    # Используем более легкую модель, оптимизированную для русского языка
-    # Она требует меньше RAM и работает быстрее на CPU
+    # Используем АКТУАЛЬНОЕ имя модели с Hugging Face
     sentiment_pipeline = pipeline(
         "sentiment-analysis",
-        model="s-nlp/rubert-base-cased-sentiment-rusentiment",
+        model="blanchefort/rubert-base-cased-sentiment-rusentiment",
         device=-1,
-        truncation=True  # Важно: автоматически обрезает длинные тексты
+        truncation=True
     )
-    logger.info("Lightweight sentiment model loaded successfully!")
+    logger.info("Sentiment model loaded successfully!")
 except Exception as e:
     logger.error(f"Error loading model: {e}")
     sentiment_pipeline = None

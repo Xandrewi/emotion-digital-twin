@@ -297,6 +297,8 @@ app.add_middleware(
 # Загрузка модели тональности (ОПТИМИЗИРОВАНО ДЛЯ RENDER)
 logger.info("Loading sentiment analysis model...")
 try:
+    # Используем более легкую модель, оптимизированную для русского языка
+    # Она требует меньше RAM и работает быстрее на CPU
     sentiment_pipeline = pipeline(
         "sentiment-analysis",
         model="s-nlp/rubert-base-cased-sentiment-rusentiment",

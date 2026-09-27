@@ -1,16 +1,10 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 transformers==4.46.3
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
-torchaudio==2.5.1+cpu
-pandas==2.2.3
-numpy==2.2.0
+torch==2.4.1
+numpy==1.26.4
+scikit-learn==1.5.2
 python-dotenv==1.0.1
 python-multipart==0.0.20
 sqlalchemy==2.0.37
 psycopg2-binary==2.9.10
-keybert==0.8.5
-yake==0.4.8
-sentence-transformers==3.3.1
